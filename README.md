@@ -1,38 +1,39 @@
 # front_5th_chapter4-1
-=======
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+## AWS S3 + CloudFront + GitHub Actions 배포 과정 정리
+- Next.js 프로젝트(`out/` 폴더)를 정적 사이트로 빌드하고,
+- AWS S3 + CloudFront를 통해 정적 사이트를 배포
+- GitHub Actions를 사용해 CI/CD 자동화 구현
 
-First, run the development server:
+### 배포 흐름
+1. `main` 브랜치에 푸시 또는 수동 실행 시 워크플로 시작
+2. 코드 체크아웃 후 의존성 설치 (`npm ci`)
+3. `npm run build`로 정적 파일(`out/`) 생성
+4. AWS S3에 `aws s3 sync`로 업로드
+5. CloudFront 배포의 캐시 무효화 수행
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+### ⚠️ 배포 과정에서 마주한 문제와 해결 방법
+`Invalid bucket name` – S3 업로드 실패
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **상황**: `aws s3 sync` 명령 실행 시 버킷 이름 형식 오류
+- **원인**:
+    - Secrets에 등록된 값에 `"arn:aws:s3:::"` 혹은 `s3://` 접두어 포함
+    - 또는 마스킹 문자열(`***`)을 그대로 등록함
+- **해결 방법**:
+    - **순수한 버킷 이름만 등록** (예: `my-app-bucket`)
+    - ARN 형식은 CLI 명령어에서는 지원되지 않음
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn More
+### 주요 링크
 
-To learn more about Next.js, take a look at the following resources:
+- S3 버킷 웹사이트 엔드포인트: http://frontend-5th.s3-website-ap-southeast-2.amazonaws.com/
+- CloudFrount 배포 도메인 이름: https://d11xaxgq148rly.cloudfront.net/
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 주요 개념
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- GitHub Actions과 CI/CD 도구: _________
+- S3와 스토리지: _________
+- CloudFront와 CDN: _________
+- 캐시 무효화(Cache Invalidation): _________
+- Repository secret과 환경변수: _________
