@@ -1,5 +1,10 @@
 # front_5th_chapter4-1
 
+## 주요 링크
+
+- S3 버킷 웹사이트 엔드포인트: http://frontend-5th.s3-website-ap-southeast-2.amazonaws.com/
+- CloudFrount 배포 도메인 이름: https://d11xaxgq148rly.cloudfront.net/
+
 ## AWS S3 + CloudFront + GitHub Actions 배포 과정 정리
 - Next.js 프로젝트(`out/` 폴더)를 정적 사이트로 빌드하고,
 - AWS S3 + CloudFront를 통해 정적 사이트를 배포
@@ -10,7 +15,8 @@
 2. 코드 체크아웃 후 의존성 설치 (`npm ci`)
 3. `npm run build`로 정적 파일(`out/`) 생성
 4. AWS S3에 `aws s3 sync`로 업로드
-5. CloudFront 배포의 캐시 무효화 수행
+5. CloudFront 배포의 캐시 무효화 수행 (이후 새 요청은 S3 오리진으로 요청 => CloudFront 가 응답을 엣지에 새로 캐싱 후 최신 콘텐츠 제공)
+
 
 ### ⚠️ 배포 과정에서 마주한 문제와 해결 방법
 1. `Invalid bucket name` – S3 업로드 실패
@@ -22,20 +28,18 @@
 - **해결 방법**:
     - **순수한 버킷 이름만 등록** (예: `my-app-bucket`)
     - ARN 형식은 CLI 명령어에서는 지원되지 않음
-
+      <br><br><br>
 2. `Content-Encoding 누락` – CloudFront 배포 후 응답 헤더에서 압축 정보가 보이지 않음
 
 - **상황**: CloudFront를 통해 배포한 정적 리소스의 응답에서 `Content-Encoding` 헤더가 보이지 않음
-
 - **원인**:
     - 브라우저가 이미 캐시한 리소스를 재요청할 때, CloudFront 엣지 로케이션이 `304 Not Modified` 응답을 반환함
     - `304` 응답은 본문이 없기 때문에, `Content-Encoding`, `Content-Length` 등의 본문 관련 헤더는 **HTTP 표준에 따라 생략**됨
     - 압축은 되어 있어도 헤더가 생략되므로, DevTools에서 이를 확인할 수 없음
-
 - **해결 방법**:
     - 브라우저의 개발자 도구(DevTools) → **Network 탭에서 "Disable cache"** 옵션을 활성화하고 새로고침
     - 강제로 **CloudFront가 200 OK 응답**을 반환하게 하여, 전체 응답 헤더(`Content-Encoding`, `Content-Length` 등)를 다시 확인할 수 있음
-
+      <br><br><br>
 3. `AccessDenied` – IAM 사용자로 로그인 시 비용 및 보안 관련 리소스 접근 실패
 - **상황**: IAM 사용자로 AWS 콘솔에 로그인한 뒤 아래 API/서비스에 접근 시 모두 `AccessDenied` 오류 발생
 - **원인**:
@@ -52,11 +56,6 @@
              "securityhub:DescribeHub",
              "servicecatalog:ListApplications"
            ],
-
-### 주요 링크
-
-- S3 버킷 웹사이트 엔드포인트: http://frontend-5th.s3-website-ap-southeast-2.amazonaws.com/
-- CloudFrount 배포 도메인 이름: https://d11xaxgq148rly.cloudfront.net/
 
 ### 주요 개념
 - GitHub Actions과 CI/CD 도구
@@ -128,5 +127,58 @@
   - 애플리케이션이나 스크립트 실행 시 필요한 설정 값이나 비밀 정보를 외부에서 주입하여 코드의 유연성과 이식성을 높이는 방식(동일 코드를 개발/테스트/운영 환경 어디서든 실행 가능하게 해줌)
   - 예: `NODE_ENV=production`, `PORT=3000`, `.env` 파일에서 불러오는 API_URL 등 
 
----
 
+## CloudFront 적용 전후 성능 비교 보고서(캐시 미사용 기준)
+### 개요
+- **목적**: 정적 리소스 요청 성능 개선을 위해 CDN 구성 적용
+- **측정 조건**:
+  - 브라우저 캐시 미사용(`Disable cache` 옵션 활성화)
+  - Chrome DevTools > Network > Timing 탭에서 측정
+  - 대상 리소스: js, svg 파일
+  <br><br>
+### 측정 결과
+1. js 파일
+
+| 항목 | CloudFront 미적용 (S3 직접) | CloudFront 적용 |
+|------|-----------------------------|-----------------|
+| 총 응답 시간 (Total) | **398.21 ms** | **68.06 ms** |
+| TTFB (Waiting for server response) | 226.09 ms | 16.83 ms |
+| 초기 연결 시간 (Initial connection) | 147.56 ms | 31.44 ms |
+| DNS Lookup | 12 µs | 16.84 ms |
+| Content Download | 5.20 ms | 0.38 ms |
+
+✅ 주요 개선 포인트
+
+| 항목 | 개선 내용 |
+|------|-----------|
+| 전체 로딩 시간 약 83% 감소 | 사용자 체감 속도 향상 |
+| TTFB 약 92.6% 감소 | 서버에서 첫 응답이 도달하는 시간 감소 (226ms → 17ms) |
+| 초기 연결/SSL 수립 시간 개선 | 엣지 서버가 더 가까워 네트워크 홉이 줄어듦 |
+| 콘텐츠 다운로드 시간 감소 | CDN 서버의 최적화된 네트워크와 압축 전송 |
+
+<br><br><br>
+
+2. svg 파일
+
+| 항목 | CloudFront 미적용 (S3 직접 요청) | CloudFront 적용 |
+|------|----------------------------------|-----------------|
+| 총 응답 시간 (Total) | 249.85 ms | **31.29 ms** |
+| TTFB (Waiting for server response) | 190.79 ms | **25.61 ms** |
+| DNS Lookup | 0 µs | 1.32 ms |
+| Content Download | 0.19 ms | 3.00 ms |
+
+✅ 주요 개선 포인트
+
+| 항목 | 개선내용                                           |
+|------|------------------------------------------------|
+| 전체 응답 시간 87.5% 감소 | 249.85ms → 31.29ms                             |
+| TTFB 86.5% 감소 | 서버 응답 지연이 크게 개선됨                               |
+| 연결 지연 제거 | CloudFront는 엣지 서버와 연결이 미리 유지되었거나 TLS 핸드셰이크가 생략됨 |
+| Content Download 소폭 증가 | 캐시 서버가 압축 없이 전달했거나 물리적 거리 차이. 하지만 전체 시간엔 영향 미미 |
+<br><br><br>
+### 결론 및 의의
+- CloudFront 도입은 정적 리소스 응답 시간, 네트워크 연결 시간, 데이터 다운로드 효율성을 전체적으로 향상시킴
+- 사용자 위치에 따라 CDN 엣지 서버가 자동 선택되어 전 세계 사용자 경험 품질 향상 가능
+- 또한 이미지 리소스(SVG)에도 성능 개선 효과가 확실히 있음
+- 특히 첫 바이트 수신까지의 시간(TTFB)과 **총 응답 시간**이 현저히 감소
+  <br><br><br>
